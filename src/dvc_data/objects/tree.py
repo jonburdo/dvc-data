@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Dict, Final, Iterable, Optional, Tuple
 
 from dvc_objects.errors import ObjectFormatError
 from dvc_objects.obj import Object
-from funcy import cached_property
 
 from ..hashfile.hash import hash_file
 from ..hashfile.obj import HashFile
@@ -54,17 +53,31 @@ class Tree(HashFile):
         self._dict: Dict[
             Tuple[str, ...], Tuple[Optional["Meta"], "HashInfo"]
         ] = {}
+        self._trie_keys_to_add = set()
+        self._trie_keys_to_remove = set()
+        self._lazy_trie = None
 
-    @cached_property
+    @property
     def _trie(self):
         from pygtrie import Trie
 
-        return Trie(self._dict)
+        if self._lazy_trie is None:
+            self._lazy_trie = Trie()
+        if self._trie_keys_to_add:
+            self._lazy_trie.update(
+                {k: self._dict[k] for k in self._trie_keys_to_add},
+            )
+            self._trie_keys_to_add = set()
+        if self._trie_keys_to_remove:
+            for key in self._trie_keys_to_remove:
+                self._lazy_trie.pop(key)
+            self._trie_keys_to_remove = set()
+        return self._lazy_trie
 
     def add(
         self, key: Tuple[str, ...], meta: Optional["Meta"], oid: "HashInfo"
     ):
-        self.__dict__.pop("trie", None)
+        self._trie_keys_to_add.add(key)
         self._dict[key] = (meta, oid)
 
     def get(
